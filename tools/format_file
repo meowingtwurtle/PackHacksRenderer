@@ -1,0 +1,4 @@
+# cd $(dirname $0)
+# ./clang-format -style=file -i $1
+
+clang-format-8 -style=file -i $1

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+cd `dirname $0`
+find ../TwurtleEngine/ -regex '.*\.\(cpp\|hpp\|cc\|cxx\|inl\)' -exec ./format_file {} \;

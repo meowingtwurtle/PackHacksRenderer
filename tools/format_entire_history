@@ -1,0 +1,5 @@
+#!/bin/bash
+cd `dirname $0`
+cd ..
+git filter-branch -f --tree-filter "find TwurtleEngine/ -regex '.*\.\(cpp\|hpp\|h\|cc\|cxx\|inl\)' -exec $(realpath tools)/format_file {} \;" -- $(git rev-list HEAD | tail -n 1)..HEAD
+
