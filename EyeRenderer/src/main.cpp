@@ -27,11 +27,6 @@
 #include <meowingtwurtle/units/default_units.hpp>
 #include <meowingtwurtle/units/units.hpp>
 
-using namespace meowingtwurtle;
-using namespace meowingtwurtle::engine;
-using namespace meowingtwurtle::engine::graphics;
-using namespace meowingtwurtle::engine::input;
-
 static_assert(std::numeric_limits<float>::is_iec559);
 static_assert(std::numeric_limits<double>::is_iec559);
 static_assert(std::numeric_limits<long double>::is_iec559);
@@ -117,70 +112,112 @@ namespace {
     }
 }
 
-int main() {
-    try {
-        using namespace std::chrono_literals;
+namespace fs = meowingtwurtle::fs;
 
-        meowingtwurtle::engine::init();
+struct graphics_engine {
+public:
+    graphics_engine(graphics_engine const&) = delete;
+    graphics_engine& operator=(graphics_engine const&) = delete;
+    
+    void tick() noexcept {
+        m_controller.tick();
+    }
+    
+    void render() const noexcept {
+        m_renderContext.render([&, this]{m_renderer(m_vertices); });
+    }
+    
+    void clear() noexcept {
+        m_vertices.clear();
+    }
+    
+    auto load_texture(fs::path const& _path) {
+        auto const& tex = [&]() -> t::texture const&  {
+            if (not m_textures.has_texture(_path.string())) {
+                m_textureNames.push_back(_path);
+                return t::load_texture_file(m_textures, _path);
+            }
 
-        window window{"Twurtle Engine", 800, 800};
-        auto renderContext = render_context(window);
-        auto renderContextLock = renderContext.make_active_lock();
-        auto engine = controller();
+            return m_textures.get_texture(_path.string());
+        }();
+        
+        return t::bind_texture_array_layer(m_textureArray, g::texture_array_index{m_texturesLoaded++}, tex); 
+    }
+    
+    void add_image(t::texture_rectangle const& _texture, int x, int y) {
+        auto lowX = ((float(x - (_texture.x_dimension() * texture_width / 2)) / float(screen_width)) - 0.5);
+        auto lowY = ((float(y - (_texture.y_dimension() * texture_height / 2)) / float(screen_height)) - 0.5);
+        auto highX = ((float(x + (_texture.x_dimension() * texture_width / 2)) / float(screen_width)) - 0.5);
+        auto highY = ((float(y + (_texture.y_dimension() * texture_height / 2)) / float(screen_height)) - 0.5);
+        
+        g::decompose_render_object_to<vertex_2d>(
+            g::render_object_rectangle<>{
+                g::location_quad{
+                    {
+                        glm::vec3{lowX, lowY, 0}
+                    },
+                    {
+                        glm::vec3{lowX, highY, 0}
+                    },
+                    {
+                        glm::vec3{highX, highY, 0}
+                    },
+                    {
+                        glm::vec3{highX, lowY, 0}
+                    }
+                },
+                _texture
+            }.use_vertex<vertex_2d>([](g::default_vertex const& _vertex){
+                return vertex_2d{_vertex.location.value, _vertex.texture.coord, _vertex.texture.layer};
+            }),
+                std::back_inserter(m_vertices)
+        );
+    }
+    
+    bool should_quit() const noexcept {
+        return (m_controller.inputs().keyboard().key_is_down(e::input::keycode::kc_escape)) || (m_controller.quit_received());
+    }
+    
+    graphics_engine() = default;
 
-        textures::texture_manager textureManager;
-
-        auto const& colorImage = textureManager.add_texture("color", textures::color_texture(16, 16, color_rgb{1, 0, 0}));
-
-        auto const& [textureArray_, colorTexture_] = textures::make_texture_array_from_layers(colorImage);
-        auto colorTextures = colorTexture_;
-
-        auto const& colorTexture = colorTexture_;
-
-        glEnable(GL_BLEND);
-        glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
-        glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
-
-        auto shader = make_shader();
-        auto vertexVecRenderer = vertex_renderer<vertex_2d>(shader);
-        auto rendererLock = vertexVecRenderer.make_active_lock();
-        auto vertices = std::vector<vertex_2d>{
-            {
-                glm::vec2{-0.5, -0.5},
-                {0, 0},
-                colorTexture.layer()
-            },
-            {
-                glm::vec2{-0.5, 0.5},
-                {0, 1},
-                colorTexture.layer()
-            },
-            {
-                glm::vec2{0.5, 0},
-                {1, 1},
-                colorTexture.layer()
-            },
-            
-        };        
-
-        while (true) {
-            engine.tick();
-            auto const& inputState = engine.inputs();
-            auto const& inputChanges = engine.input_changes();
-
-            renderContext.render([&] {
-              vertexVecRenderer(vertices);
-            });
-
-            if (inputState.keyboard().key_is_down(input::keycode::kc_escape)) return 0;
-
-            if (engine.quit_received()) return 0;
+    static constexpr int texture_width = 512;
+    static constexpr int texture_height = 512;
+    static constexpr int screen_width = 800;
+    static constexpr int screen_height = 800;
+    
+private:
+    struct do_init {
+        do_init() {
+            e::init();
         }
-    } catch (std::exception& e) {
-        log::error << "Exception reached main! Message: " << e.what();
-        return 1;
-    } catch (...) {
-        log::error("Exception reached main!");
-        return 1;
+    };
+    
+    do_init initter;
+    g::window m_window{"Eye Renderer", screen_width, screen_height};
+    e::controller m_controller;
+    std::vector<fs::path> m_textureNames;
+    t::texture_manager m_textures;
+    std::vector<vertex_2d> m_vertices;
+    g::render_context m_renderContext{m_window};
+    g::render_context_active_lock m_renderContextLock = m_renderContext.make_active_lock();
+    g::shader<vertex_2d> m_shader = make_shader();
+    g::vertex_renderer<vertex_2d> m_renderer{m_shader};
+    t::unique_texture_array m_textureArray = t::make_texture_array(texture_width, texture_height, 32);
+    int m_texturesLoaded = 0;
+};
+
+int main() {
+    graphics_engine engine;
+    auto const& texture = engine.load_texture("texture/cross.png");
+    
+    for (int x = 0; x < 3; ++x) { 
+        for (int y = 0; y < 3; ++y) {
+            engine.add_image(texture, (x - 1) * engine.screen_width + 400, (y - 1) * engine.screen_height + 400);
+        }
+    }
+    
+    while (not engine.should_quit()) {
+        engine.tick();
+        engine.render();
     }
 }
