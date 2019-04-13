@@ -1,0 +1,3 @@
+[submodule "lib/TwurtleEngine"]
+	path = lib/TwurtleEngine
+	url = https://github.com/meowingtwurtle/TwurtleEngine.git
